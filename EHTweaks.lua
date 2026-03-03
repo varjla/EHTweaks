@@ -83,6 +83,12 @@ local function InitializeDB()
     -- Initialize Loadout Tables
     if not EHTweaksDB.loadouts then EHTweaksDB.loadouts = {} end
     if not EHTweaksDB.backups then EHTweaksDB.backups = {} end
+    
+    -- Register UI frames to UISpecialFrames to allow closing them with the ESC key.
+    -- The WoW client handles this gracefully via string lookup without breaking the Game Menu.
+    tinsert(UISpecialFrames, "ProjectEbonholdEmpowermentFrame")
+    tinsert(UISpecialFrames, "EHT_ModernDraftFrame")
+    tinsert(UISpecialFrames, "EHTweaks_BrowserFrame")
 end
 
 
