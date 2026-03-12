@@ -537,8 +537,8 @@ local function OverrideSelectedLoadout()
     entry.nodes     = nodes
     entry.cost      = cost
     
-    -- Safe check for icon (icons is a table from GetTreeInfo, entry.icon must be a string)
-    if icons and icons[1] then
+    -- Keep original icon. Only assign a new one if the loadout was somehow completely missing an icon.
+    if not entry.icon and icons and icons[1] then
         entry.icon = icons[1]
     end
     
