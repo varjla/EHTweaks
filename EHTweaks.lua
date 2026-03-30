@@ -1,4 +1,5 @@
 -- Author: Skulltrail
+-- Collaborators: (add you here) varjla
 -- EHTweaks: Project Ebonhold Extensions
 -- Features: Skill Tree Filter, Echoes Filter, Visual Highlights, Focus Zoom, Chat Links, Movable Echo Button, Echoes DB, Starter DB, Objective Tracker, PlayerRunFrame Saver, Minimap Button, Skill Tree Reset Button, Loadout Manager
 
@@ -642,7 +643,7 @@ local function CreateExtraTreeButtons()
     resetBtn:SetSize(90, 22)
     
     -- Position: Bottom Right of the skill tree bar
-    resetBtn:SetPoint("BOTTOMRIGHT", _G.skillTreeBottomBar, "BOTTOMRIGHT", -10, 5)
+    resetBtn:SetPoint("BOTTOMRIGHT", _G.skillTreeBottomBar, "BOTTOMRIGHT", -240, 5)
     resetBtn:SetText("Reset Tree")
     
     resetBtn:SetScript("OnClick", function()
@@ -884,6 +885,9 @@ local function ApplyEchoFilter(text)
     end
 end
 
+-- EHT Echo Filter DISABLED: the game now has a built-in filter in the Empowerment frame.
+-- (It lacks a clear button, but adding ours causes a duplicate. Commented out for now.)
+--[[
 local function CreateEchoFilterFrame()
     local parent = _G.ProjectEbonholdEmpowermentFrame
     if not parent or echoFilterBox then return end
@@ -934,6 +938,7 @@ local function CreateEchoFilterFrame()
     
     echoFilterBox = eb
 end
+--]]
 
 -- ==============================
 -- EHT: EmpowermentFrame tweaks
@@ -1554,10 +1559,11 @@ local function AddEHTLabel()
     local parent = _G.ProjectEbonholdPlayerRunFrame
     if not parent or parent.ehtLabel then return end
     
+    -- EHT label: moved down to avoid overlapping the new Normal/HC area
     local container = CreateFrame("Frame", nil, parent)
     container:SetFrameLevel(parent:GetFrameLevel() + 10)
     container:SetSize(50, 30)
-    container:SetPoint("TOPLEFT", parent, "TOPLEFT", 24, -10)
+    container:SetPoint("TOPLEFT", parent, "TOPLEFT", 24, -22)
     
     local label = container:CreateFontString(nil, "OVERLAY", "SystemFont_Outline_Small")
     label:SetPoint("LEFT", container, "LEFT", 0, 0)
@@ -1569,11 +1575,13 @@ local function AddEHTLabel()
     parent.ehtLabelContainer = container
 
     -- "C" button (Compendium) - Main Panel with Book Icon
+    -- Anchored dynamically: looks for the LAST visible FontString with a number sign (+N)
+    -- which corresponds to the new Catch-Up Bonus element added by the game update.
     if not parent.ehtCompendiumBtn then
         local cb = CreateFrame("Button", nil, parent)
         cb:SetSize(18, 18)
-        -- The user prefers this initial position:
-        cb:SetPoint("LEFT", label, "RIGHT", 140, -25) 
+        -- Fallback initial position (will be overridden by the ticker below)
+        cb:SetPoint("LEFT", label, "RIGHT", 170, -12)
         cb:SetFrameLevel(parent:GetFrameLevel() + 20)
         cb:EnableMouse(true)
         cb:RegisterForClicks("LeftButtonUp")
@@ -1581,7 +1589,6 @@ local function AddEHTLabel()
         local tex = cb:CreateTexture(nil, "OVERLAY")
         tex:SetAllPoints()
         tex:SetTexture("Interface\\Icons\\INV_Misc_Book_03")
-        -- Fallback if icon is missing
         if not tex:GetTexture() then
             tex:SetTexture("Interface\\Icons\\Spell_Monk_BrewmasterTraining")
         end
@@ -1598,21 +1605,53 @@ local function AddEHTLabel()
 
         parent.ehtCompendiumBtn = cb
 
-        -- Dynamic re-anchoring to the Ash Multiplier percentage string
+        -- Dynamic re-anchoring: anchor AFTER the rightmost visible FontString child of the frame.
+        -- The game has added a new "+N" Catch-Up Bonus element to the right of the multiplier %.
+        -- We iterate ALL children (not just regions) to find the rightmost visible one.
         C_Timer.NewTicker(1, function()
             if not parent or not parent.ehtCompendiumBtn then return end
             
+            -- Pass 1: find the rightmost visible FontString among direct regions
+            local rightmostReg = nil
+            local rightmostX = -math.huge
             local regions = {parent:GetRegions()}
             for _, reg in ipairs(regions) do
-                if reg:IsObjectType("FontString") then
+                if reg:IsObjectType("FontString") and reg:IsShown() then
                     local txt = reg:GetText() or ""
-                    if txt:find("%%") and reg:IsShown() then
-                        parent.ehtCompendiumBtn:ClearAllPoints()
-                        parent.ehtCompendiumBtn:SetPoint("LEFT", reg, "RIGHT", 6, 0)
-                        break
+                    -- Match both "%" (multiplier) and "+N" (catch-up bonus) patterns
+                    if txt:find("%%") or txt:match("^%+%d") then
+                        local rx = reg:GetRight() or 0
+                        if rx > rightmostX then
+                            rightmostX = rx
+                            rightmostReg = reg
+                        end
                     end
                 end
             end
+            
+            -- Pass 2: also check Frame children for FontStrings
+            local children = {parent:GetChildren()}
+            for _, child in ipairs(children) do
+                if child:IsShown() and child ~= parent.ehtCompendiumBtn and child ~= container then
+                    local cRegions = {child:GetRegions()}
+                    for _, reg in ipairs(cRegions) do
+                        if reg:IsObjectType("FontString") and reg:IsShown() then
+                            local txt = reg:GetText() or ""
+                            if txt:match("^%+%d") then
+                                local rx = child:GetRight() or 0
+                                if rx > rightmostX then
+                                    rightmostX = rx
+                                    rightmostReg = child -- anchor to the child frame
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            
+            -- Same horizontal position (-26), lowered to align with the soul ash row
+            parent.ehtCompendiumBtn:ClearAllPoints()
+            parent.ehtCompendiumBtn:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -26, 90)
         end)
     end
 end
@@ -2345,20 +2384,13 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if ProjectEbonhold and ProjectEbonhold.PlayerRunUI and ProjectEbonhold.PlayerRunUI.UpdateGrantedPerks then
             hooksecurefunc(ProjectEbonhold.PlayerRunUI, "UpdateGrantedPerks", function()
                 RecordOwnedEchoes()
-                if EHTweaksDB.enableFilters then
-                    if not echoFilterBox then CreateEchoFilterFrame() end
-                    if currentEchoSearchText and currentEchoSearchText ~= "" then
-                        ApplyEchoFilter(currentEchoSearchText)
-                    else
-                        ApplyEchoFilter("") 
-                    end
-                end
+                -- EHT Echo filter disabled (game now has built-in filter): skipping CreateEchoFilterFrame/ApplyEchoFilter
                 if EHTweaksDB.enableChatLinks then HookEchoButtons() end
-            
-             if not _G.ProjectEbonholdEmpowermentFrame then return end
-        if not _G.ProjectEbonholdEmpowermentFrame.EHT_MoverInstalled then
-            EHT_SetupEmpowermentFrameMoveAndSave()
-        end
+
+                if not _G.ProjectEbonholdEmpowermentFrame then return end
+                if not _G.ProjectEbonholdEmpowermentFrame.EHT_MoverInstalled then
+                    EHT_SetupEmpowermentFrameMoveAndSave()
+                end
             end)
         end
       
@@ -2474,7 +2506,6 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
              end
         end)
       
-    
         -- --- SILENT SKILL TREE DATA REQUEST (PRELOAD CHARACTER ID) ---        
         C_Timer.After(3, function()
             -- 1. Check if we already have the ID (Success condition)
@@ -2660,10 +2691,10 @@ local function CreateMiniRunBar(mainFrame)
     
     local function HideTooltip(self) GameTooltip:Hide() end
 
-    -- [2] Icons
+    -- [2] Objective Board Icons
     local reward = CreateFrame("Button", nil, f)
     reward:SetSize(20, 20)
-    reward:SetPoint("LEFT", maxBtn, "RIGHT", 6, -5) 
+    reward:SetPoint("LEFT", maxBtn, "RIGHT", 26, -5) 
     reward:EnableMouse(true)
     reward:SetScript("OnEnter", ShowTooltip)
     reward:SetScript("OnLeave", HideTooltip)
@@ -2793,7 +2824,7 @@ local function SyncMiniTracker()
             
             -- Adjust layout if there is no reward icon pushing it to the right
             if not hasReward then
-                miniBarFrame.curseIcon:SetPoint("LEFT", miniBarFrame.maxBtn, "RIGHT", 6, -5)
+                miniBarFrame.curseIcon:SetPoint("LEFT", miniBarFrame.maxBtn, "RIGHT", 26, -5)
             else
                 miniBarFrame.curseIcon:SetPoint("LEFT", miniBarFrame.rewardIcon, "RIGHT", 2, 0)
             end
@@ -2806,18 +2837,80 @@ local function SyncMiniTracker()
     end
 end
 
+-- Helper: scan ProjectEbonholdPlayerRunFrame for the Catch-Up Bonus value (+N) and mode text
+local function EHT_ScanRunFrameExtras()
+    local parent = _G.ProjectEbonholdPlayerRunFrame
+    if not parent then return nil, nil end
+
+    local catchUp = nil
+    local modeText = nil
+
+    -- Check direct FontString regions
+    local regions = {parent:GetRegions()}
+    for _, reg in ipairs(regions) do
+        if reg:IsObjectType("FontString") and reg:IsShown() then
+            local txt = reg:GetText() or ""
+            -- Catch-up bonus: looks like "+30" or "+15" etc.
+            if txt:match("^%+%d+$") then
+                catchUp = txt
+            end
+            -- Mode: "Normal" or "Hardcore"
+            if txt == "Normal" or txt == "Hardcore" then
+                modeText = txt
+            end
+        end
+    end
+
+    -- Also scan immediate children for FontStrings
+    local children = {parent:GetChildren()}
+    for _, child in ipairs(children) do
+        if child:IsShown() then
+            local cregs = {child:GetRegions()}
+            for _, reg in ipairs(cregs) do
+                if reg:IsObjectType("FontString") and reg:IsShown() then
+                    local txt = reg:GetText() or ""
+                    if txt:match("^%+%d+$") and not catchUp then
+                        catchUp = txt
+                    end
+                    if (txt == "Normal" or txt == "Hardcore") and not modeText then
+                        modeText = txt
+                    end
+                end
+            end
+        end
+    end
+
+    return modeText, catchUp
+end
+
 local function UpdateMiniBarText()
     if not miniBarFrame then return end
     
     local int = lastIntData.intensity or 0
     local ash = lastRunData.soulPoints or 0
     local mult = (lastRunData.soulPointsMultiplier or 0) * 100
+
+    -- Scan the main frame for mode (Normal/HC) and Catch-Up Bonus
+    local modeStr, catchUpStr = EHT_ScanRunFrameExtras()
+
+    local modeColor = "|cff88ff88"  -- green for Normal
+    if modeStr == "Hardcore" then
+        modeColor = "|cffff4444"  -- red for Hardcore
+    end
+    local modeDisplay = modeStr and (modeColor .. modeStr .. "|r  |  ") or ""
+
+    local catchUpDisplay = ""
+    if catchUpStr then
+        catchUpDisplay = "  |  |cffffcc00" .. catchUpStr .. "|r"
+    end
     
     local text = string.format(
-        "Int: |cffffffff%d|r  |  Ash: |cff29C0E6%s|r  |  |cff00ff00+%.0f%%|r",
+        "%sInt: |cffffffff%d|r  |  Ash: |cff29C0E6%s|r  |  |cff00ff00+%.0f%%%s|r",
+        modeDisplay,
         int,
-        FormatLargeNumber and FormatLargeNumber(ash) or ash, 
-        mult
+        FormatLargeNumber and FormatLargeNumber(ash) or ash,
+        mult,
+        catchUpDisplay
     )
     miniBarFrame.text:SetText(text)
     
@@ -2850,16 +2943,24 @@ local function InitMinimizer(numTries)
 
     if not mainFrame.ehtMinimizeBtn then
         local minBtn = CreateFrame("Button", nil, mainFrame)
-        minBtn:SetSize(20, 20)
+        minBtn:SetSize(16, 16)
         
-       
-        minBtn:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 15, 0) 
+        -- TOPRIGHT, pulled inward to sit cleanly inside the frame corner
+        minBtn:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", -14, 0)
         
         minBtn:SetFrameLevel(mainFrame:GetFrameLevel() + 20)
         
         minBtn:SetNormalTexture("Interface\\Buttons\\UI-Panel-SmallerButton-Up")
         minBtn:SetPushedTexture("Interface\\Buttons\\UI-Panel-SmallerButton-Down")
         minBtn:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight")
+
+        minBtn:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText("Minimize Run Frame", 1, 1, 1)
+            GameTooltip:AddLine("Collapse to compact bar.", 0.8, 0.8, 0.8, true)
+            GameTooltip:Show()
+        end)
+        minBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
         
         minBtn:SetScript("OnClick", function()
             EHTweaksDB.runFrameCollapsed = true
